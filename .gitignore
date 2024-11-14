@@ -47,3 +47,8 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# don't want to upload data-- too big
+data/
+figs/
+retired_figs/
