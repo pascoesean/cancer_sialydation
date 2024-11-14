@@ -1,0 +1,333 @@
+---
+title: "Sialydation in Cancer"
+author: "Sean Pascoe"
+date: today
+
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+    link-external-newwindow: true
+
+execute:
+  warning: false
+
+from: markdown+emoji 
+---
+
+```{r}
+#| show: false
+
+library(tidyverse)
+library(DT)
+```
+
+
+Goal: investigate CD44 expression by cancer cells in relationship to SIGLEC9 expressing immune cells. 
+
+## Can we see cell-cell communication in the sc data?
+
+This is what we are looking for:
+![](figs/sig9-cd44.png){width=25%}
+
+I.e., we want to see the communication between cells expressing sialylated CD44 (probably cancer cells-- need better cancer cell definition) and those expressing siglec9. 
+
+![](figs/allcells_umap.png)
+![](figs/allcells_cd44_cd163_sig9_st3gal4.png)
+
+Hard to tell from umap alone what is going on here. 
+
+### Siglec9 is expressed in low levels in innate immune cells
+
+It is also important to note here that in this dataset, siglec9 is really only visibly expressed in myeloid cells; and even within that subset it is expressed at low levels:
+
+```{r}
+#| hide: true
+
+sigetal_expression <- read_rds("data/sigetal_expression.rds")
+
+sexpression <- sigetal_expression |>
+  mutate(cd44_sig = CD44*SIGLEC9,
+         st3_sum = ST3GAL4 + ST3GAL5 + ST3GAL6,
+         cd44_stgal = CD44*st3_sum,
+         category = case_when(
+           treatment_1 == "TMZ" ~ 'tmz_treat',
+           treatment_1 == "untreated" ~ 'untreated',
+           treatment_1 == "PD1" ~ PD1
+         ))
+
+sexpression |>
+  #filter(anno_ident %in% c("cDCs", "Microglial", "Monocytes", "Macrophages")) |>
+  ggplot(aes(x = SIGLEC9, y = st3_sum)) +
+  geom_point(alpha = 0.01) +
+  facet_wrap(~anno_ident) +
+  labs(y = "summed expression of ST3GAL4 + ST3GAL5 + ST3GAL6") +
+  ggpubr::theme_pubr()
+
+```
+
+Can we see cell-cell communication here? Not really.
+
+```{r}
+#| hide: true
+
+sexpression |>
+  filter(anno_ident %in% c("cDCs", "Microglial", "Monocytes", "Macrophages")) |>
+  ggplot(aes(x = CD44, y = st3_sum)) +
+  geom_point(alpha = 0.01) +
+  ggpmisc::stat_poly_line(se = F) +
+  ggpmisc::stat_poly_eq() +
+  facet_grid(rows = vars(anno_ident), cols = vars(category)) +
+  labs(y = "summed expression of ST3GAL4 + ST3GAL5 + ST3GAL6") +
+  ggpubr::theme_pubr()
+
+```
+
+
+Our marker of cancer resistance, $$\text{cd44\_stgal} = (\text{CD44}*(ST3GAL4 + ST3GAL5 + ST3GAL6))$$  doesn't really look different between populations. But this is probably not super robust:
+
+```{r}
+
+sexpression |>
+  filter(anno_ident %in% c("cDCs", "Microglial", "Monocytes", "Macrophages")) |>
+  ggplot(aes(x = log10(cd44_stgal), color = category)) +
+  #facet_grid(rows = vars(anno_ident), cols = vars(treatment_1)) +
+  geom_freqpoly() +
+  ggpubr::theme_pubr()
+
+
+sexpression |>
+  filter(anno_ident %in% c("cDCs", "Microglial", "Monocytes", "Macrophages")) |>
+  ggplot(aes(x = log10(cd44_stgal), color = category)) +
+  #facet_grid(rows = vars(anno_ident), cols = vars(treatment_1)) +
+  geom_freqpoly() +
+  facet_wrap(~anno_ident, scale = "free_y") +
+  ggpubr::theme_pubr()
+```
+
+
+
+### Looking at Proportions of relevant cells in the sc data
+
+Here, we can look at proportions of three populations: 
+
+- sig9s, which have $SIGLEC9 > 1$ 
+- sig9tams, which have $SIGLEC9 > 1$  and $CD163 > 1$
+and 
+- sialcd44s, which have $CD44 > 1$ and *AT LEAST ONE OF* $ST6GALNAC5 > 1$, $ST6GALNAC3 > 1$, $ST3GAL4-AS1 > 1$, $ST3GAL5-AS1 > 1$, or $ST3GAL4 > 1$
+
+
+![](figs/sialcd44_vs_sig9.png)
+
+It appears like nonresponders have proportionally more of these pro-cancer subsets!
+
+Interestingly, we don't really see any of them in recurrent tumors without PD1 treatment-- indicating that they could be induced specifically *by* immune checkpoint inhibition (woah).
+
+However, this might be a *bit* patient specific; or at least scaled disproportionately by a few patients:
+
+![](figs/sialcd44_sig9s_bypatient.png)
+
+
+
+
+
+## Reclustering
+
+Repeating some of the monocyte reclustering done in the paper:
+
+![](retired_figs/umap_submono.png)
+
+![](retired_figs/clustered_mono_bytreat.png)
+
+
+
+Can look at markers overall, but it is hard to get biology out of this-- not sure where (or if) to cutoff by log scale fold change
+
+```{r}
+#| hide: true
+
+markers <- readRDS("data/mono_subset_markers.rds")
+  
+markers %>%
+  group_by(cluster) %>%
+  #dplyr::filter(avg_log2FC > 1) |>
+  DT::datatable()
+
+```
+
+
+We can also look one by one for clusters and calculate discrimination using ROC as metric:
+
+(example with cluster 1):
+
+```{r}
+
+cluster1.markers <- read_csv(file = "data/clust1_markers.csv")
+
+cluster1.markers |>
+  DT::datatable()
+
+```
+
+
+In general though; I'm not sure the standard reclustering is even what we want to look at here-- there is no need to define cell types specifically if we don't really care about who exactly is expressing Siglec9; as long as we know some (myeloid) cells are doing it and this is a marker of treatment resistance. 
+
+## ICB data
+
+We can also take advantage of publicly available single cell data by looking at two different studies that evaluated the response to immnue checkpoint blockade (ICB) therapy in clear cell renal cell carcinoma (ccRCC) patients. Specifically, I am looking at the following two studies:
+
+-  [Krishna et al., 2021](https://doi.org/10.1016/j.ccell.2021.03.007) *Single-cell sequencing links multiregional immune landscapes and tissue-resident T cells in ccRCC to tumor topology and therapy efficacy*. Cancer Cell.
+
+and
+
+- [Bi et al., 2021](https://doi.org/10.1016/j.ccell.2021.02.015) *Tumor and immune reprogramming during immunotherapy in advanced renal cell carcinoma*. Cancer Cell.
+
+
+In both of these analyses, normalized expression data was used to define two populations of cells:
+
+- `sig9s`, which have $SIGLEC9 > 0.1$ 
+
+- `sialcd44s`, which have $CD44 > 1$ and *AT LEAST ONE OF* $ST3GAL3 > 0.1$, $ST3GAL4 > 0.1$, OR $ST3GAL6 > 0.1$
+
+Here, we are looking to see if there is a dual upregulation of Siglec9 expressing cells (`sig9s`) and other cells which are likely expressing sialylated CD44 (`sialcd44s`) that could be recognized by Siglec 9. 
+
+### krishna et al 2021
+
+The study design here involved tumor samples from the kidneys of 6 individuals, as described here (NiVo = checkpoint blockade):
+
+![](figs/krishna_fig.jpg)
+
+When we look at the overall proportion of cells expressing siglec9 or Sialylated CD44, we see a clear trend wherein responders (t4, complete; t3, mixed) have fewer of these cells while non-responders (t2, resistant) seemed to have larger proportions. 
+
+
+![](figs/krishna_sig9-sialcd44_0.1.png)
+*Proportion of cells with sialylated CD44 in a sample correlates with proportion expressing Siglec9. T1 (exposed to therapy) and T2 (resistant to therapy) have higher values of both than T3 (mixed response to therapy) and T4 (complete response to therapy). This does not include two controls not on therapy; both which had scattered (but generally high) proportions of Siglec9 cells and Sialylated CD44 cells.*
+
+### Bi et al 2021
+
+In this study, 8 patients had samples from different locations analyzed:
+
+![](figs/bi_schematic.png)
+
+
+Just looking at the proportion expressing sialCD44/Sig9, we do not see the same clean trends as in the previous data:
+
+```{r}
+#| label: bi-together
+#| fig-width: 15
+#| fig-height: 10
+
+bi_combo <- read_rds("data/ccRCC/bi/bi_combo.rds")
+
+sialcd44 <- bi_combo |>
+  filter(CD44 > 1 & (ST3GAL3 > .1 | ST3GAL4 > .1 | ST3GAL6 > .1))
+
+sig9s <- bi_combo |>
+  filter(SIGLEC9 > .1)
+
+sialcd44_counts <- sialcd44 |>
+  group_by(donor_id, ICB_Response, organ__ontology_label) |>
+  summarize(num_sialcd44 = n())
+
+sig9_counts <- sig9s |>
+  group_by(donor_id, ICB_Response, organ__ontology_label) |>
+  summarize(num_sig9 = n())
+
+total_counts <- bi_combo |>
+  group_by(donor_id, ICB_Response, organ__ontology_label) |>
+  summarize(total_bycat = n())
+
+
+bi_props <- total_counts |>
+  full_join(y = sialcd44_counts) |>
+  full_join(y = sig9_counts) |>
+  # introduced NA values here are just zeros (there were no counts of that)
+  mutate_all(~replace(., is.na(.), 0)) |> 
+  mutate(prop_sig9 = num_sig9/total_bycat,
+         prop_sialcd44 = num_sialcd44/total_bycat) 
+
+bi_props |>
+  mutate(ICB_Response = case_when(
+    ICB_Response == "ICB_PR" ~ "Partial Response",
+    ICB_Response == "ICB_SD" ~ "Stable Disease",
+    ICB_Response == "ICB_PD" ~ "Progressive Disease",
+    ICB_Response == "ICB_NE" ~ "Not Evaluable",
+    ICB_Response == "NoICB" ~ "No ICB Treatment"
+  )) |>
+  ggplot(aes(x = prop_sialcd44, y = prop_sig9, color = ICB_Response, shape = organ__ontology_label)) +
+  geom_point(size = 8) +
+  ggpubr::theme_pubr() +
+  labs(x = "Proportion with Sialylated CD44", y = "Proportion with Siglec9") 
+
+```
+
+We can also split this up with some more specificity-- because the authors published their cell type annotations with general categories (regular tissue, myeloid, lymphoid, or putative tumor), we can look at the proprotion of putative tumor cells expressing sialCD44 and the proprotion of myeloid cells expressing Siglec9 in each of these groups:
+
+```{r}
+#| label: bi-granular
+#| fig-width: 15
+#| fig-height: 10
+
+sialcd44 <- bi_combo |>
+  filter(CD44 > 1 & (ST3GAL3 > .1 | ST3GAL4 > .1 | ST3GAL6 > .1) & Lineage == "Putative Tumor")
+
+sig9s <- bi_combo |>
+  filter(SIGLEC9 > .1 & Lineage == "Myeloid")
+
+sialcd44_counts <- sialcd44 |>
+  group_by(donor_id, ICB_Response, organ__ontology_label) |>
+  summarize(num_sialcd44 = n())
+
+sig9_counts <- sig9s |>
+  group_by(donor_id, ICB_Response, organ__ontology_label) |>
+  summarize(num_sig9 = n())
+
+total_counts_myeloid <- bi_combo |>
+  filter(Lineage == "Myeloid") |>
+  group_by(donor_id, ICB_Response, organ__ontology_label) |>
+  summarize(total_mye_bycat = n())
+
+total_counts_tumor <- bi_combo |>
+  filter(Lineage == "Putative Tumor") |>
+  group_by(donor_id, ICB_Response, organ__ontology_label) |>
+  summarize(total_tum_bycat = n())
+
+bi_props <- total_counts_myeloid |>
+  left_join(y = total_counts_tumor) |>
+  full_join(y = sialcd44_counts) |>
+  full_join(y = sig9_counts) |>
+  # introduced NA values here are just zeros (there were no counts of that)
+  mutate_all(~replace(., is.na(.), 0)) |> 
+  mutate(prop_mye_sig9 = num_sig9/total_mye_bycat,
+         prop_tum_sialcd44 = num_sialcd44/total_tum_bycat) 
+
+bi_props |>
+  mutate(ICB_Response = case_when(
+    ICB_Response == "ICB_PR" ~ "Partial Response",
+    ICB_Response == "ICB_SD" ~ "Stable Disease",
+    ICB_Response == "ICB_PD" ~ "Progressive Disease",
+    ICB_Response == "ICB_NE" ~ "Not Evaluable",
+    ICB_Response == "NoICB" ~ "No ICB Treatment"
+  )) |>
+  ggplot(aes(x = prop_tum_sialcd44, y = prop_mye_sig9, color = ICB_Response, shape = organ__ontology_label)) +
+  geom_point(size = 8) +
+  ggpubr::theme_pubr() +
+  labs(x = "Proportion of Tumor cells with Sialylated CD44", y = "Proportion of Myeloid cells with Siglec9") 
+
+```
+
+This... is not super helpful imo. It is worth noting here that because they only actually sample kidney for one ICB patient, it is not super clear that we would expect to see co-upregulation of these subsets. Either way, this may highlight the limitations of publicly available single cell ICB/ccRCC data.
+
+
+## Next Steps
+
+- Define re-analysis controls to see if separation seen between responders and non-responders in the Krishna data is meaningful (and possibly to see if there are other things separating these populations in the Bi data that aren't what we are looking at)
+
+- definitely would be cool to follow up with immunofluorescence/IHC-- even if we don't have good markers for sialylated CD44, do we see more Siglec9-CD44 interactions in ICB treated tumors than non-treated ones? Does that difference fall apart when looking only at those that respond well to therapy?
+
+- Might be able to look more into bulk RNA seq data with tools such as [GlycoMaple](https://glycosmos.org/glycomaple/Human) that suggest glycosylation networks based on RNAseq data 
+
+![](figs/glycomaple_example.png)
+*Glycomaple example showing upregulated glycosylation pathways in a Nivolumab treated ccRCC tumor vs one treated with an mTOR inhibitor. Only one of each was used as an example.*
