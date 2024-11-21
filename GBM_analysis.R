@@ -13,7 +13,7 @@ var_features <- int_data@assays$integrated@var.features |>
 
 DimPlot(int_data, reduction = "umap")
 
-VlnPlot(int_data, features = c("ST6GALNAC3", "CD163", "CD44", "SIGLEC9"))
+VlnPlot(int_data, features = c("ST3GAL4", "CD163", "CD44", "SIGLEC9"))
 
 
 VlnPlot(int_data, features = c("CD44", "SIGLEC9"))
@@ -28,8 +28,7 @@ FeaturePlot(int_data, features = c("CD44", "ST3GAL6"), blend = TRUE, split.by = 
 # maybe some meaningful coexpression for st3gal5?
 
 # using which cells to look at those
-sialcd44 <- WhichCells(int_data, expression = CD44 > 1 &  ("ST6GALNAC5" > 1 | "ST6GALNAC3" > 1 |
-                                                               "ST3GAL4-AS1" > 1 | "ST3GAL5-AS1" > 1 |
+sialcd44 <- WhichCells(int_data, expression = CD44 > 1 &  ("ST3GAL3" > 1 | "ST3GAL6" > 1 |
                                                                "ST3GAL4" > 1))
 
 sig9tams <- WhichCells(int_data, expression = CD163 > 1 &  SIGLEC9 > 1)
@@ -71,6 +70,8 @@ total_cells_joined <- total_cells |>
          prop_sig9s = n_sig9s/total_forcat,
          prop_sig9tams = n_sig9tams/total_forcat)
 
+write_rds(total_cells_joined, file = "data/gbm_total_cells_1.0threshold.rds")
+
 # interesting....
 total_cells_joined |>
   select(treatment_3, Pt_number, starts_with("prop_")) |>
@@ -83,8 +84,11 @@ total_cells_joined |>
   labs(y = "proportion of total cells in this category") + 
   theme(axis.text.x = element_text(angle = 45, hjust=  1, vjust = 1))
 
-
-
+total_cells_joined |>
+  ggplot(aes(x = prop_sialcd44, y = prop_sig9s, color = treatment_3, shape = treatment_3)) +
+  geom_point(size = 3) + 
+  ggpubr::theme_pubr() 
+    
 DimPlot(int_data, reduction = "umap", split.by = "treatment_3", cells = sig9tams)
 
 dpos_subset <- subset(x = int_data, subset = SIGLEC9 > 1 & CD44 > 1)
@@ -93,14 +97,14 @@ FeaturePlot(int_data, features = c("CD44", "SIGLEC9"), split.by = 'treatment_1',
 
 VlnPlot(dpos_subset, features = c("CD44", "SIGLEC9"), split.by = 'treatment_1')
 
-sigetal_expression <- FetchData(int_data, vars = c("CD44", "ST3GAL4", "ST3GAL5", "ST3GAL6", "ST6GALNAC3", "SIGLEC9", 
+sigetal_expression <- FetchData(int_data, vars = c("CD44", "ST3GAL4", "ST3GAL3", "ST3GAL6", "ST6GALNAC3", "SIGLEC9", 
                                                    "anno_ident", "treatment_1", "PD1"))
 
 write_rds(sigetal_expression, file = "data/sigetal_expression.rds")
 
 sexpression <- sigetal_expression |>
   mutate(cd44_sig = CD44*SIGLEC9,
-         st3_sum = ST3GAL4 + ST3GAL5 + ST3GAL6,
+         st3_sum = ST3GAL4 + ST3GAL3 + ST3GAL6,
          cd44_stgal = CD44*st3_sum,
          category = case_when(
            treatment_1 == "TMZ" ~ 'tmz_treat',
@@ -113,7 +117,7 @@ sexpression |>
   ggplot(aes(x = SIGLEC9, y = st3_sum)) +
   geom_point(alpha = 0.01) +
   facet_wrap(~anno_ident) +
-  labs(y = "summed expression of ST3GAL4 + ST3GAL5 + ST3GAL6") +
+  labs(y = "summed expression of ST3GAL4 + ST3GAL3 + ST3GAL6") +
   ggpubr::theme_pubr()
 
 sexpression |>

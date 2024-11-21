@@ -24,6 +24,12 @@ library(tidyverse)
 library(DT)
 ```
 
+::: {.callout-tip icon="false"}
+## Link to Github Repository
+
+<https://github.com/pascoesean/cancer_sialydation>
+:::
+
 
 Goal: investigate CD44 expression by cancer cells in relationship to SIGLEC9 expressing immune cells. 
 
@@ -50,7 +56,7 @@ sigetal_expression <- read_rds("data/sigetal_expression.rds")
 
 sexpression <- sigetal_expression |>
   mutate(cd44_sig = CD44*SIGLEC9,
-         st3_sum = ST3GAL4 + ST3GAL5 + ST3GAL6,
+         st3_sum = ST3GAL4 + ST3GAL3 + ST3GAL6,
          cd44_stgal = CD44*st3_sum,
          category = case_when(
            treatment_1 == "TMZ" ~ 'tmz_treat',
@@ -63,7 +69,7 @@ sexpression |>
   ggplot(aes(x = SIGLEC9, y = st3_sum)) +
   geom_point(alpha = 0.01) +
   facet_wrap(~anno_ident) +
-  labs(y = "summed expression of ST3GAL4 + ST3GAL5 + ST3GAL6") +
+  labs(y = "summed expression of ST3GAL4 + ST3GAL3 + ST3GAL6") +
   ggpubr::theme_pubr()
 
 ```
@@ -80,13 +86,13 @@ sexpression |>
   ggpmisc::stat_poly_line(se = F) +
   ggpmisc::stat_poly_eq() +
   facet_grid(rows = vars(anno_ident), cols = vars(category)) +
-  labs(y = "summed expression of ST3GAL4 + ST3GAL5 + ST3GAL6") +
+  labs(y = "summed expression of ST3GAL4 + ST3GAL3 + ST3GAL6") +
   ggpubr::theme_pubr()
 
 ```
 
 
-Our marker of cancer resistance, $$\text{cd44\_stgal} = (\text{CD44}*(ST3GAL4 + ST3GAL5 + ST3GAL6))$$  doesn't really look different between populations. But this is probably not super robust:
+Our marker of cancer resistance, $$\text{cd44\_stgal} = (\text{CD44}*(ST3GAL4 + ST3GAL3 + ST3GAL6))$$  doesn't really look different between populations. But this is probably not super robust:
 
 ```{r}
 
@@ -113,23 +119,45 @@ sexpression |>
 
 Here, we can look at proportions of three populations: 
 
-- sig9s, which have $SIGLEC9 > 1$ 
+- sig9s, which have $SIGLEC9 > .1$ 
 - sig9tams, which have $SIGLEC9 > 1$  and $CD163 > 1$
 and 
-- sialcd44s, which have $CD44 > 1$ and *AT LEAST ONE OF* $ST6GALNAC5 > 1$, $ST6GALNAC3 > 1$, $ST3GAL4-AS1 > 1$, $ST3GAL5-AS1 > 1$, or $ST3GAL4 > 1$
+- sialcd44s, which have $CD44 > 1$ and *AT LEAST ONE OF* $ST3GAL3 > .1$, $ST3GAL4 > .1$, or $ST3GAL6 > .1$ 
 
 
-![](figs/sialcd44_vs_sig9.png)
+```{r}
+#| label: stgal-cor-gbm
 
-It appears like nonresponders have proportionally more of these pro-cancer subsets!
+total_cells_joined_0.1 <- read_rds(file = "data/gbm_total_cells_0.1threshold.rds")
 
-Interestingly, we don't really see any of them in recurrent tumors without PD1 treatment-- indicating that they could be induced specifically *by* immune checkpoint inhibition (woah).
+total_cells_joined_0.1 |>
+  ggplot(aes(x = prop_sialcd44, y = prop_sig9s, 
+             color = treatment_3, shape = treatment_3)) +
+  geom_point(size = 3) + 
+  ggpubr::theme_pubr() 
+```
 
-However, this might be a *bit* patient specific; or at least scaled disproportionately by a few patients:
+Because those thresholds are arbitrary, we can remake the plot with 
 
-![](figs/sialcd44_sig9s_bypatient.png)
+- sig9s, which have $SIGLEC9 > 1$ 
+and
+- sialcd44s, which have $CD44 > 1$ and *AT LEAST ONE OF* $ST3GAL3 > 1$, $ST3GAL4 > 1$, or $ST3GAL6 > 1$ 
 
+```{r}
+#| label: stgal-cor-gbm-1
 
+total_cells_joined_1.0 <- read_rds(file = "data/gbm_total_cells_1.0threshold.rds")
+
+total_cells_joined_1.0 |>
+  ggplot(aes(x = prop_sialcd44, y = prop_sig9s, 
+             color = treatment_3, shape = treatment_3)) +
+  geom_point(size = 3) + 
+  ggpubr::theme_pubr() 
+```
+
+Seems like some of the nonresponders have high values; but not all. Could make sense that this isn't pan cancer occurance, especially since GBM seems super heterogeneous.
+
+That said, these trends could form a more robust metric if we had a good way to quantify them in each dataset and a lot of datasets to work from... hmmm....
 
 
 
